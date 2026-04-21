@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Detour</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: oklch(0.982 0.005 225);
+    --bg2: oklch(0.957 0.007 225);
+    --fg: oklch(0.24 0.02 250);
+    --fg2: oklch(0.5 0.016 250);
+    --border: color-mix(in oklab, var(--fg) 14%, var(--bg));
+    --accent: #2a7598;
+    --accent-contrast: var(--fg);
+    --danger: #cf222e;
+    --danger-contrast: #ffffff;
+    --success: #1f7a36;
+    --success-contrast: #ffffff;
+    --surface-raised: oklch(0.99 0.003 225);
+    --focus-ring: rgba(42, 117, 152, 0.16);
+    --r: 14px;
+    --input-bg: color-mix(in oklab, var(--surface-raised) 94%, var(--accent) 1%);
+    --input-bd: color-mix(in oklab, var(--fg) 12%, var(--bg));
+    --heading-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    --body-font: "Aptos", "Segoe UI Variable Text", "Segoe UI", Helvetica, Arial, sans-serif;
+    --sp-1: 4px;
+    --sp-2: 6px;
+    --sp-3: 8px;
+    --sp-4: 10px;
+    --sp-5: 12px;
+    --sp-6: 14px;
+    --sp-7: 16px;
+    --sp-8: 20px;
+    --sp-9: 24px;
+    --sp-10: 28px;
+    --sp-11: 32px;
+    --sp-12: 40px;
+    --sp-13: 48px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: oklch(0.18 0.01 240);
+      --bg2: oklch(0.22 0.011 240);
+      --fg: oklch(0.91 0.012 230);
+      --fg2: oklch(0.76 0.014 230);
+      --border: color-mix(in oklab, var(--fg) 14%, var(--bg));
+      --accent: #6cb6d6;
+      --accent-contrast: var(--fg);
+      --danger: #f85149;
+      --danger-contrast: #0d1117;
+      --success: #3fb950;
+      --success-contrast: #0d1117;
+      --surface-raised: oklch(0.235 0.012 238);
+      --focus-ring: rgba(108, 182, 214, 0.16);
+      --input-bg: color-mix(in oklab, var(--surface-raised) 96%, var(--accent) 1%);
+      --input-bd: color-mix(in oklab, var(--fg) 14%, var(--bg));
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  body {
+    width: clamp(320px, 92vw, 420px);
+    font-family: var(--body-font);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--fg);
+    background: var(--bg);
+  }
+
+  .view { padding: var(--sp-8) var(--sp-7) var(--sp-7); }
+  .hidden { display: none !important; }
+
+  .header {
+    display: grid;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-6);
+  }
+  .eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--fg2);
+  }
+  .brand-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+  }
+  .brand-mark {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 5px;
+  }
+  .header-copy-wrap {
+    display: grid;
+    gap: var(--sp-2);
+    min-width: 0;
+  }
+  .header-title {
+    font-family: var(--heading-font);
+    font-size: clamp(18px, 3.6vw, 21px);
+    line-height: 1.02;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+  }
+  .header-title-edit {
+    font-size: clamp(18px, 3.8vw, 22px);
+  }
+  .header-copy {
+    display: none;
+  }
+  .header-edit {
+    gap: var(--sp-3);
+  }
+  .header-edit-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .section-label {
+    margin-bottom: var(--sp-3);
+    color: var(--fg2);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* ── Buttons ── */
+  .btn-icon {
+    flex-shrink: 0;
+    display: inline-block;
+    opacity: 0.85;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--sp-2);
+    min-height: 36px;
+    padding: 6px 12px; font-size: 10.5px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface-raised); color: var(--fg);
+    cursor: pointer; white-space: nowrap;
+    font-family: inherit;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  }
+  .btn:hover { background: var(--bg2); }
+  .btn:disabled,
+  .btn-ghost:disabled {
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: color-mix(in oklab, var(--accent) 9%, var(--surface-raised));
+    color: var(--accent-contrast);
+    border-color: color-mix(in oklab, var(--accent) 12%, var(--border));
+  }
+  .btn-primary:hover {
+    background: color-mix(in oklab, var(--accent) 12%, var(--surface-raised));
+  }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: var(--danger-contrast); }
+  .btn-ghost {
+    min-height: 44px;
+    min-width: 44px;
+    border: none; background: none; color: var(--fg2); padding: 10px 0; cursor: pointer;
+    font: inherit;
+  }
+  .btn-ghost:hover { color: var(--fg); }
+  .btn:focus-visible,
+  .btn-ghost:focus-visible,
+  .hint-toggle:focus-visible,
+  .rule-open:focus-visible,
+  .toggle:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--focus-ring);
+  }
+
+  /* ── Rule rows ── */
+  #rules {
+    border-top: 1px solid var(--border);
+  }
+  .rule-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: var(--sp-2) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-row.is-disabled .rule-body {
+    opacity: 0.62;
+  }
+  .rule-open {
+    flex: 1;
+    min-width: 0;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) 0;
+    border: none;
+    border-radius: var(--r);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .rule-open:hover { color: inherit; }
+  .rule-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg2);
+  }
+  .rule-icon svg { display: block; }
+  .rule-body { flex: 1; min-width: 0; }
+  .rule-name {
+    font-family: var(--heading-font);
+    font-size: 14px;
+    line-height: 1.02;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .rule-detail {
+    display: block;
+    font-size: 11.5px;
+    color: var(--fg2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0;
+  }
+
+  /* ── Toggle ── */
+  .toggle {
+    flex-shrink: 0;
+    position: relative;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r);
+    cursor: pointer;
+  }
+  .toggle input { opacity: 0; position: absolute; inset: 0; cursor: pointer; }
+  .toggle .track {
+    position: absolute;
+    top: 11px;
+    left: 4px;
+    width: 32px;
+    height: 18px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .toggle .track::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: color-mix(in oklab, var(--accent) 88%, var(--bg));
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .toggle input:checked + .track::before { transform: scaleX(1); }
+  .toggle .knob {
+    position: absolute;
+    top: 13px;
+    left: 6px;
+    width: 14px;
+    height: 14px;
+    background: var(--surface-raised);
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    translate: 0 0;
+    scale: 1 1;
+    transform-origin: center;
+    transition: translate 320ms cubic-bezier(0.4, 1.2, 0.55, 1),
+                box-shadow 220ms ease-out;
+    will-change: translate, scale;
+  }
+  .toggle input:checked ~ .knob {
+    translate: 14px 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  }
+  .toggle.is-toggling .knob {
+    animation: knob-squash 340ms cubic-bezier(0.45, 0, 0.3, 1);
+  }
+  @keyframes knob-squash {
+    0%   { scale: 1 1; }
+    40%  { scale: 1.32 0.82; }
+    75%  { scale: 0.94 1.06; }
+    100% { scale: 1 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toggle .track::before,
+    .toggle .knob { transition-duration: 0ms; }
+    .toggle.is-toggling .knob { animation: none; }
+  }
+
+  /* ── Header actions / overflow menu ── */
+  .header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .more-wrap { position: relative; display: inline-flex; }
+  .btn-more {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-raised);
+    color: var(--fg2);
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.18s ease, color 0.18s ease;
+  }
+  .btn-more:hover { background: var(--bg2); color: var(--fg); }
+  .btn-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--focus-ring);
+  }
+  .btn-more svg { display: block; }
+  .more-menu {
+    position: absolute;
+    top: calc(100% + var(--sp-2));
+    right: 0;
+    min-width: 160px;
+    padding: var(--sp-1);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+    z-index: 10;
+  }
+  .more-item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    min-height: 36px;
+    padding: var(--sp-3) var(--sp-4);
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--r) - 4px);
+    font: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .more-item svg { flex-shrink: 0; color: var(--fg2); }
+  .more-item:hover svg { color: var(--fg); }
+  .more-item:hover { background: var(--bg2); }
+  .more-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .more-item:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
+
+  /* ── Edit form ── */
+  .field { margin-bottom: var(--sp-5); }
+  .field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg2);
+    margin-bottom: var(--sp-2);
+  }
+  .field-row { display: flex; gap: var(--sp-3); }
+
+  input[type="text"], select {
+    width: 100%; min-height: 42px; padding: 9px 12px; font-size: 12px; font-family: inherit;
+    color: var(--fg); background: var(--input-bg);
+    border: 1px solid var(--input-bd); border-radius: var(--r); outline: none;
+  }
+  input[type="text"]:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--focus-ring);
+  }
+  select { cursor: pointer; }
+
+  .script-list { list-style: none; margin-bottom: var(--sp-3); }
+  .script-item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) 0;
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    color: var(--fg2);
+    word-break: break-all;
+    border-bottom: 1px solid var(--border);
+  }
+  .script-item .btn-ghost { font-size: 14px; padding: 0 2px; }
+
+  .edit-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-4);
+    padding-top: var(--sp-5);
+    padding-bottom: var(--sp-2);
+    border-top: 1px solid var(--border);
+    margin-top: var(--sp-6);
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+  }
+  .edit-actions-right { display: flex; gap: var(--sp-3); margin-left: auto; }
+
+  /* ── Hints ── */
+  .hint {
+    font-size: 10.5px;
+    color: var(--fg2);
+    margin-top: var(--sp-2);
+    line-height: 1.45;
+    max-width: 34ch;
+  }
+  .hint code {
+    font-family: "SF Mono", Consolas, monospace; font-size: 10px;
+    background: var(--bg2); padding: 1px 4px; border-radius: 4px;
+  }
+  .hint-toggle {
+    font-size: 10.5px; color: var(--accent); cursor: pointer;
+    min-height: 32px;
+    border: none; background: none; padding: 0; margin-top: var(--sp-1);
+    font-family: inherit;
+  }
+  .hint-toggle:hover { text-decoration: underline; }
+  .hint-examples { display: none; margin-top: var(--sp-3); }
+  .hint-examples.visible { display: block; }
+
+  /* ── Execution indicators ── */
+  .page-url {
+    font-size: 12px;
+    color: var(--fg);
+    min-height: 34px;
+    padding: 7px var(--sp-4);
+    margin-bottom: var(--sp-5);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rule-open .exec-dot {
+    display: none;
+  }
+  .rule-open .exec-count {
+    flex-shrink: 0; font-size: 10px; font-weight: 600;
+    min-width: 20px; height: 20px; line-height: 18px;
+    margin-left: auto;
+    text-align: center; border-radius: 999px;
+    background: color-mix(in oklab, var(--fg) 6%, var(--bg));
+    border: 1px solid color-mix(in oklab, var(--fg) 10%, var(--border));
+    color: var(--fg2);
+    display: none;
+  }
+  .rule-open .exec-count.visible { display: block; }
+  .empty-state {
+    padding: var(--sp-7) 0;
+    display: grid;
+    gap: var(--sp-2);
+  }
+  .empty-title {
+    font-family: var(--heading-font);
+    font-size: 18px;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .empty-copy {
+    color: var(--fg2);
+    max-width: 24ch;
+    font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ LIST VIEW ═══ -->
+<div id="list-view" class="view">
+  <div class="header">
+    <div class="header-top">
+      <div class="brand-row">
+        <img src="icon.svg" alt="" class="brand-mark" />
+        <div class="eyebrow">Detour</div>
+      </div>
+      <div class="header-actions">
+        <div class="more-wrap">
+          <button type="button" class="btn-more" id="btn-more" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu" aria-label="More actions">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <circle cx="3.25" cy="8" r="1.35" />
+              <circle cx="8" cy="8" r="1.35" />
+              <circle cx="12.75" cy="8" r="1.35" />
+            </svg>
+          </button>
+          <div class="more-menu hidden" id="more-menu" role="menu">
+            <button type="button" class="more-item" id="btn-import" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 2.25v7.5" />
+                <path d="M5 6.75 8 9.75l3-3" />
+                <path d="M2.75 11.25v1.25a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1.25" />
+              </svg>
+              Import rules…
+            </button>
+            <button type="button" class="more-item" id="btn-export" role="menuitem">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 9.75v-7.5" />
+                <path d="M5 5.25 8 2.25l3 3" />
+                <path d="M2.75 11.25v1.25a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1v-1.25" />
+              </svg>
+              Export rules
+            </button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" id="btn-new">
+          <svg class="btn-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+            <path d="M8 3.5v9M3.5 8h9" />
+          </svg>
+          New
+        </button>
+      </div>
+    </div>
+    <div class="header-copy-wrap">
+      <h1 class="header-title">Rules for this page</h1>
+      <p class="header-copy">Redirect a request or add a script.</p>
+    </div>
+  </div>
+  <div class="section-label">Active page</div>
+  <div class="page-url" id="page-url" title="">No page selected</div>
+  <div id="rules"></div>
+</div>
+
+<!-- ═══ EDIT VIEW ═══ -->
+<div id="edit-view" class="view hidden">
+  <div class="header header-edit">
+    <div class="header-edit-top">
+      <button type="button" class="btn-ghost" id="btn-back">&#8592; Back</button>
+      <div class="brand-row">
+        <img src="icon.svg" alt="" class="brand-mark" />
+        <div class="eyebrow">Detour</div>
+      </div>
+    </div>
+    <div class="header-copy-wrap">
+      <h1 class="header-title header-title-edit" id="edit-title">Edit rule</h1>
+    </div>
+  </div>
+
+  <div class="field">
+    <label class="field-label" for="f-name">Name</label>
+    <input type="text" id="f-name" placeholder="Rule name" />
+  </div>
+  <div class="field">
+    <label class="field-label" for="f-type">Type</label>
+    <select id="f-type">
+        <option value="redirect">Redirect</option>
+      <option value="script">Inject on load</option>
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-label" for="f-source">When URL matches</label>
+    <div class="field-row">
+      <label class="sr-only" for="f-operator">Match operator</label>
+      <select id="f-operator" style="width:110px;flex-shrink:0">
+        <option value="wildcard">Wildcard</option>
+        <option value="contains">Contains</option>
+        <option value="equals">Equals</option>
+        <option value="regex">Regex</option>
+      </select>
+      <label class="sr-only" for="f-source">Source URL pattern</label>
+      <input type="text" id="f-source" placeholder="URL pattern" />
+    </div>
+    <div class="hint" id="hint-source"></div>
+    <button type="button" class="hint-toggle" id="hint-source-toggle" aria-expanded="false" aria-controls="hint-source-examples">Examples</button>
+    <div class="hint-examples" id="hint-source-examples"></div>
+  </div>
+
+  <div id="redirect-fields">
+    <div class="field">
+      <label class="field-label" for="f-destination">Redirect to</label>
+      <input type="text" id="f-destination" placeholder="Destination URL" />
+    </div>
+    <div class="hint" id="hint-dest"></div>
+  </div>
+
+  <div id="script-fields" class="hidden">
+    <div class="field">
+      <label class="field-label" for="f-script-url">Scripts to inject on load</label>
+      <ul class="script-list" id="f-scripts"></ul>
+      <div class="field-row">
+        <input type="text" id="f-script-url" placeholder="https://cdn.example/assets/script.js" />
+        <button type="button" class="btn" id="btn-add-script">Add script</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="edit-actions">
+    <button type="button" class="btn btn-danger hidden" id="btn-delete">Delete</button>
+    <div class="edit-actions-right">
+      <button type="button" class="btn" id="btn-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btn-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
