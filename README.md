@@ -44,7 +44,11 @@ page-script.js              — Content script (MAIN world, document_start): pat
 Requires [sharp](https://sharp.pixelplumbing.com/) (`npm install sharp`).
 
 ```bash
-node scripts/build.js
+node scripts/build.js                 # build with current version
+node scripts/build.js --bump patch    # bump patch (0.1.1 -> 0.1.2) then build
+node scripts/build.js --bump minor    # bump minor
+node scripts/build.js --bump major    # bump major
+node scripts/build.js --version 1.2.3 # set exact version
 ```
 
 This regenerates PNG icons from `icon.svg` and packages everything into `detour-<version>.zip`.

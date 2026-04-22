@@ -167,9 +167,20 @@ function renderRules() {
         void toggle.offsetWidth;
         toggle.classList.add("is-toggling");
         setTimeout(function () { toggle.classList.remove("is-toggling"); }, 360);
-        row.classList.toggle("is-disabled", !input.checked);
-        send({ type: "toggleRule", ruleId: rule.id }).then(function (res) {
-          if (res) allRules = res.rules;
+        var desired = input.checked;
+        row.classList.toggle("is-disabled", !desired);
+        // Send the desired state explicitly so concurrent toggles can't race
+        // and cancel each other out by re-inverting stale storage state.
+        send({ type: "toggleRule", ruleId: rule.id, enabled: desired }).then(function (res) {
+          if (res) {
+            allRules = res.rules;
+            // Reconcile UI in case the server-side state diverged from the
+            // optimistic update (e.g. another popup or a concurrent change).
+            var updated = allRules.find(function (r) { return r.id === rule.id; });
+            if (updated && updated.enabled !== desired) {
+              renderRules();
+            }
+          }
         });
       });
 

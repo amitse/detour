@@ -138,11 +138,30 @@ async function getRules() {
   return rules || DEFAULT_RULES;
 }
 
+// Serialize all rule mutations so concurrent messages (e.g. rapid toggles)
+// can't read the same stale snapshot and overwrite each other, and so DNR
+// resyncs never run from overlapping snapshots.
+let rulesMutationChain = Promise.resolve();
+
+function withRulesLock(fn) {
+  const next = rulesMutationChain.then(fn, fn);
+  rulesMutationChain = next.catch(() => {});
+  return next;
+}
+
 async function setRules(rules) {
   const sanitized = sanitizeRules(rules);
   await chrome.storage.local.set({ rules: sanitized });
   await syncDnrRules(sanitized);
   return sanitized;
+}
+
+async function mutateRules(mutator) {
+  return withRulesLock(async () => {
+    const current = await getRules();
+    const next = await mutator(current);
+    return setRules(next);
+  });
 }
 
 // ── URL matching ─────────────────────────────────────────────────────
@@ -365,40 +384,49 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
 
       case "toggleRule":
-        rules = await getRules();
-        rules = rules.map((r) =>
-          r.id === message.ruleId ? { ...r, enabled: !r.enabled } : r
+        rules = await mutateRules((current) =>
+          current.map((r) => {
+            if (r.id !== message.ruleId) return r;
+            // Use the explicit desired state when provided so concurrent
+            // toggles can't cancel each other out by re-inverting stale state.
+            const desired = typeof message.enabled === "boolean"
+              ? message.enabled
+              : !r.enabled;
+            return { ...r, enabled: desired };
+          })
         );
-        rules = await setRules(rules);
         sendResponse({ rules });
         break;
 
       case "saveRule": {
-        rules = await getRules();
-        const idx = rules.findIndex((r) => r.id === message.rule.id);
-        if (idx >= 0) {
-          rules[idx] = message.rule;
-        } else {
-          rules.push(message.rule);
-        }
-        rules = await setRules(rules);
+        rules = await mutateRules((current) => {
+          const idx = current.findIndex((r) => r.id === message.rule.id);
+          if (idx >= 0) {
+            current[idx] = message.rule;
+          } else {
+            current.push(message.rule);
+          }
+          return current;
+        });
         sendResponse({ rules });
         break;
       }
 
       case "deleteRule":
-        rules = await getRules();
-        rules = rules.filter((r) => r.id !== message.ruleId);
-        rules = await setRules(rules);
+        rules = await mutateRules((current) =>
+          current.filter((r) => r.id !== message.ruleId)
+        );
         sendResponse({ rules });
         break;
 
       case "importRules": {
-        const existing = await getRules();
-        const incoming = Array.isArray(message.rules) ? message.rules : [];
-        const merged = dedupeImportedRules(existing.concat(incoming));
-        const addedCount = merged.length - existing.length;
-        rules = await setRules(merged);
+        let addedCount = 0;
+        rules = await mutateRules((current) => {
+          const incoming = Array.isArray(message.rules) ? message.rules : [];
+          const merged = dedupeImportedRules(current.concat(incoming));
+          addedCount = merged.length - current.length;
+          return merged;
+        });
         sendResponse({ rules, addedCount });
         break;
       }

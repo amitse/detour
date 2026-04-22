@@ -1,10 +1,17 @@
 /* build.js — Build Detour for the Chrome Web Store.
  *
- *   1. Regenerates PNG icons from icon.svg (via build-icons.js).
- *   2. Packages all runtime files into detour-<version>.zip with manifest.json
+ *   1. Optionally bumps the manifest version (--bump patch|minor|major,
+ *      or --version=X.Y.Z to set explicitly).
+ *   2. Regenerates PNG icons from icon.svg (via build-icons.js).
+ *   3. Packages all runtime files into detour-<version>.zip with manifest.json
  *      at the zip root, ready to upload to the Web Store dashboard.
  *
- * Usage: node scripts/build.js
+ * Usage:
+ *   node scripts/build.js                 # build with current version
+ *   node scripts/build.js --bump patch    # 0.1.1 -> 0.1.2
+ *   node scripts/build.js --bump minor    # 0.1.1 -> 0.2.0
+ *   node scripts/build.js --bump major    # 0.1.1 -> 1.0.0
+ *   node scripts/build.js --version 1.2.3 # set exact version
  *
  * Pure Node — no extra dependencies beyond `sharp` (already used by build-icons).
  */
@@ -32,18 +39,81 @@ const RUNTIME_FILES = [
   "icons/icon-128.png",
 ];
 
-// ── 1. Regenerate icons ────────────────────────────────────────────────────
+// ── 0. Parse CLI args ──────────────────────────────────────────────────────
+
+function parseArgs(argv) {
+  const out = { bump: null, version: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const eq = a.indexOf("=");
+    const key = eq >= 0 ? a.slice(0, eq) : a;
+    const inlineVal = eq >= 0 ? a.slice(eq + 1) : null;
+    const next = () => (inlineVal !== null ? inlineVal : argv[++i]);
+    if (key === "--bump") out.bump = next();
+    else if (key === "--version") out.version = next();
+    else throw new Error(`unknown arg: ${a}`);
+  }
+  if (out.bump && !["patch", "minor", "major"].includes(out.bump)) {
+    throw new Error(`--bump must be patch|minor|major, got: ${out.bump}`);
+  }
+  if (out.version && !/^\d+(\.\d+){0,3}$/.test(out.version)) {
+    throw new Error(`--version must be a valid manifest version: ${out.version}`);
+  }
+  if (out.bump && out.version) {
+    throw new Error("use either --bump or --version, not both");
+  }
+  return out;
+}
+
+function bumpVersion(current, kind) {
+  // Pad to at least 3 components so patch/minor/major always make sense.
+  const parts = current.split(".").map((n) => parseInt(n, 10));
+  while (parts.length < 3) parts.push(0);
+  const [major, minor, patch, ...rest] = parts;
+  switch (kind) {
+    case "major": return [major + 1, 0, 0].concat(rest.map(() => 0)).join(".");
+    case "minor": return [major, minor + 1, 0].concat(rest.map(() => 0)).join(".");
+    case "patch": return [major, minor, patch + 1].concat(rest).join(".");
+  }
+}
+
+const args = parseArgs(process.argv.slice(2));
+
+// ── 1. Read & maybe update manifest version ────────────────────────────────
+
+const manifestPath = path.join(ROOT, "manifest.json");
+const manifestText = fs.readFileSync(manifestPath, "utf8");
+const manifest = JSON.parse(manifestText);
+const previousVersion = manifest.version;
+
+let nextVersion = previousVersion;
+if (args.bump) nextVersion = bumpVersion(previousVersion, args.bump);
+else if (args.version) nextVersion = args.version;
+
+if (nextVersion !== previousVersion) {
+  // Preserve formatting by replacing only the version line so unrelated
+  // whitespace/key order in manifest.json stays intact.
+  const updated = manifestText.replace(
+    /("version"\s*:\s*")[^"]+(")/,
+    `$1${nextVersion}$2`
+  );
+  if (updated === manifestText) {
+    throw new Error(`failed to rewrite version in manifest.json`);
+  }
+  fs.writeFileSync(manifestPath, updated);
+  manifest.version = nextVersion;
+  console.log(`→ bumped version ${previousVersion} → ${nextVersion}`);
+}
+
+// ── 2. Regenerate icons ────────────────────────────────────────────────────
 
 console.log("→ regenerating icons");
 execFileSync(process.execPath, [path.join(__dirname, "build-icons.js")], {
   stdio: "inherit",
 });
 
-// ── 2. Validate manifest ───────────────────────────────────────────────────
+// ── 3. Validate manifest ───────────────────────────────────────────────────
 
-const manifest = JSON.parse(
-  fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")
-);
 const version = manifest.version;
 if (!/^\d+(\.\d+){0,3}$/.test(version)) {
   throw new Error(`invalid manifest version: ${version}`);
