@@ -1,0 +1,836 @@
+/* Detour — shared popup / devtools-panel styles */
+
+:root {
+  color-scheme: light dark;
+  --bg: oklch(0.982 0.005 225);
+  --bg2: oklch(0.957 0.007 225);
+  --fg: oklch(0.24 0.02 250);
+  --fg2: oklch(0.5 0.016 250);
+  --border: color-mix(in oklab, var(--fg) 14%, var(--bg));
+  --accent: #2a7598;
+  --accent-contrast: var(--fg);
+  --danger: #d03a3a;
+  --danger-contrast: oklch(0.98 0.003 225);
+  --success: #2ea043;
+  --success-contrast: oklch(0.98 0.003 225);
+  --warning: #8a5d00;
+  --warning-contrast: oklch(0.98 0.003 225);
+  --surface-raised: oklch(0.99 0.003 225);
+  --focus-ring: color-mix(in oklab, var(--accent) 18%, transparent);
+  --r: 14px;
+  --input-bg: color-mix(in oklab, var(--surface-raised) 94%, var(--accent) 1%);
+  --input-bd: color-mix(in oklab, var(--fg) 12%, var(--bg));
+  /* Brand: Newsreader (serif) + Instrument Sans (body) with strong system
+   * fallbacks. Fonts aren't bundled yet, so users without them installed land
+   * on Iowan / Aptos — still editorial, just the backup stack. Swap a woff2
+   * @font-face block in here once the font files ship with the extension. */
+  --heading-font: "Newsreader", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --body-font: "Instrument Sans", "Aptos", "Segoe UI Variable Text", "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono-font: "JetBrains Mono", "SF Mono", Consolas, "Courier New", monospace;
+  /* Type scale — rem-based, 12 px body. Narrower than the old 10/11/12/13/14
+   * run: the 13 px step collapsed into 14, and the 10 px step kept only for
+   * badges/pills. Roles:
+   *   --t-micro (10 px): dense badges (exec count, method pill, resume button)
+   *   --t-xs    (11 px): eyebrow, caption, hint, rule detail, preset sub
+   *   --t-sm    (12 px): body, inputs, preset sub
+   *   --t-lg    (14 px): rule names, preset names
+   *   --t-xl    (16 px): URL hero (the scope anchor for the whole list) */
+  --t-micro: 0.625rem;
+  --t-xs: 0.6875rem;
+  --t-sm: 0.75rem;
+  --t-lg: 0.875rem;
+  --t-xl: 1rem;
+
+  /* Elevation tokens — shadows tint toward --fg (the cool neutral) instead of
+   * pure black, so they read as recession on tinted backgrounds instead of a
+   * black halo. Dark mode needs heavier alpha to stay visible on dark surfaces. */
+  --shadow-sm: 0 1px 2px color-mix(in oklab, var(--fg) 14%, transparent);
+  --shadow-md: 0 10px 28px color-mix(in oklab, var(--fg) 18%, transparent);
+  --shadow-knob: 0 1px 2px color-mix(in oklab, var(--fg) 16%, transparent);
+  --shadow-knob-active: 0 1px 3px color-mix(in oklab, var(--fg) 24%, transparent);
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 20px;
+  --sp-9: 24px;
+  --sp-10: 28px;
+  --sp-11: 32px;
+  --sp-12: 40px;
+  --sp-13: 48px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.18 0.01 240);
+    --bg2: oklch(0.22 0.011 240);
+    --fg: oklch(0.91 0.012 230);
+    --fg2: oklch(0.76 0.014 230);
+    --border: color-mix(in oklab, var(--fg) 14%, var(--bg));
+    --accent: #6cb6d6;
+    --accent-contrast: var(--fg);
+    --danger: #f48771;
+    --danger-contrast: oklch(0.18 0.01 240);
+    --success: #73c991;
+    --success-contrast: oklch(0.18 0.01 240);
+    --warning: #e5ba7d;
+    --warning-contrast: oklch(0.18 0.01 240);
+    --surface-raised: oklch(0.235 0.012 238);
+    /* focus-ring, shadow tokens inherit from :root — the color-mix functions
+     * re-evaluate against the dark --accent / --fg automatically. Only the
+     * alpha floors change, so we bump shadow mix percentages here. */
+    --input-bg: color-mix(in oklab, var(--surface-raised) 96%, var(--accent) 1%);
+    --input-bd: color-mix(in oklab, var(--fg) 14%, var(--bg));
+    --shadow-sm: 0 1px 2px color-mix(in oklab, #000 45%, transparent);
+    --shadow-md: 0 10px 28px color-mix(in oklab, #000 55%, transparent);
+    --shadow-knob: 0 1px 2px color-mix(in oklab, #000 50%, transparent);
+    --shadow-knob-active: 0 1px 3px color-mix(in oklab, #000 65%, transparent);
+  }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+body {
+  width: clamp(320px, 92vw, 420px);
+  font-family: var(--body-font);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  font-kerning: normal;
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.surface-panel {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.view { padding: var(--sp-8) var(--sp-7) var(--sp-7); }
+.hidden { display: none !important; }
+
+.header {
+  display: grid;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.eyebrow {
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+.brand-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 5px;
+}
+.header-copy-wrap {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.header-title {
+  font-family: var(--heading-font);
+  font-size: clamp(18px, 3.6vw, 21px);
+  line-height: 1.02;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.header-title-edit {
+  font-size: clamp(18px, 3.8vw, 22px);
+}
+.header-edit {
+  gap: var(--sp-3);
+}
+.header-edit-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.section-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  color: var(--fg2);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.section-count {
+  color: var(--fg2);
+  opacity: 0.5;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.section-count:empty { display: none; }
+
+/* ── Buttons ── */
+.btn-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  opacity: 0.85;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  min-height: 40px;
+  padding: 6px 12px; font-size: var(--t-xs); font-weight: 600;
+  letter-spacing: 0.005em;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-raised); color: var(--fg);
+  cursor: pointer; white-space: nowrap;
+  font-family: inherit;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.btn:hover { background: var(--bg2); }
+.btn:disabled,
+.btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: default;
+  pointer-events: none;
+}
+.btn-primary {
+  background: color-mix(in oklab, var(--accent) 9%, var(--surface-raised));
+  color: var(--accent-contrast);
+  border-color: color-mix(in oklab, var(--accent) 12%, var(--border));
+}
+.btn-primary:hover {
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface-raised));
+}
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { background: var(--danger); color: var(--danger-contrast); }
+.btn-ghost {
+  min-height: 44px;
+  min-width: 44px;
+  border: none; background: none; color: var(--fg2); padding: 10px 0; cursor: pointer;
+  font: inherit;
+}
+.btn-ghost:hover { color: var(--fg); }
+.btn:focus-visible,
+.btn-ghost:focus-visible,
+.hint-toggle:focus-visible,
+.rule-open:focus-visible,
+.toggle:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+/* ── Rule sections ──
+ * Rhythm strategy: tight WITHIN a section (label → list → add-button sit
+ * close), generous BETWEEN sections. Without the big bottom margin every
+ * gap in the popup is ~10–14px and the whole column reads as a monolithic
+ * stack instead of distinct "paragraphs". Principle: "create visual rhythm
+ * through varied spacing — tight groupings, generous separations." */
+.rules-section {
+  margin-bottom: var(--sp-11);
+}
+.rules-section:last-of-type { margin-bottom: var(--sp-10); }
+.rules-section .section-label {
+  margin-bottom: var(--sp-2);
+}
+
+.rules-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+.rules-list:empty { border-top: none; margin-top: 0; }
+
+/* Row grid — fixes toggle drift by locking a 3-column layout on every row:
+ *   [icon 16 | name/detail 1fr | toggle 40]
+ * Exec count collapses into the middle cell at its end. */
+.rule-row {
+  display: grid;
+  grid-template-columns: 1fr 40px;
+  column-gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.rule-row:last-child { border-bottom: none; }
+.rule-row.is-disabled .rule-body {
+  opacity: 0.62;
+}
+.rule-open {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border: none;
+  border-radius: var(--r);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.rule-open:hover { color: inherit; }
+/* Boxed icon container — stops the `<>` glyph from reading as punctuation
+ * and gives the redirect squiggle a consistent optical frame. 20px lands on
+ * the spec's 16/20 icon grid; disabled rows dim the container + stroke to
+ * --fg2, enabled rows lift the container toward the accent while the icon
+ * itself stays neutral — spec: active state comes from the container, not
+ * from making the icon louder. */
+.rule-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg2);
+  background: color-mix(in oklab, var(--fg) 5%, transparent);
+  border-radius: 4px;
+}
+.rule-icon svg { display: block; }
+.rule-row:not(.is-disabled) .rule-icon {
+  color: var(--fg);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.rule-body { min-width: 0; }
+/* Rule names are IDENTIFIERS (code references) — set them in mono to match
+ * that mental model. Serif is reserved for the warm moments (empty-state
+ * title). Active rules get weight 600 + positive tracking so "on" reads
+ * without relying on the toggle color alone. */
+.rule-name {
+  font-family: var(--mono-font);
+  font-size: var(--t-lg);
+  line-height: 1.15;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rule-row:not(.is-disabled) .rule-name {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+/* Detail row: flex so the source ellipsis-truncates while the destination
+ * stays intact — truncating the destination hides the load-bearing half. */
+.rule-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--t-xs);
+  color: var(--fg2);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.rule-src {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rule-arrow {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  color: var(--fg2);
+  opacity: 0.7;
+}
+/* Destination stays intact — it's the load-bearing half ("where does this
+ * request actually go?"). Source ellipsizes first. */
+.rule-dst {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.rule-method {
+  flex-shrink: 0;
+  display: inline-block;
+  margin-right: var(--sp-2);
+  padding: 1px 5px;
+  font-family: var(--mono-font);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: color-mix(in oklab, var(--fg) 6%, var(--bg));
+  color: var(--fg2);
+  border-radius: 4px;
+}
+
+/* ── Toggle ── */
+.toggle {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+.toggle input { opacity: 0; position: absolute; inset: 0; cursor: pointer; }
+.toggle .track {
+  position: absolute;
+  top: 11px;
+  left: 4px;
+  width: 32px;
+  height: 18px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.toggle .track::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--accent) 88%, var(--bg));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.toggle input:checked + .track::before { transform: scaleX(1); }
+.toggle .knob {
+  position: absolute;
+  top: 13px;
+  left: 6px;
+  width: 14px;
+  height: 14px;
+  background: var(--surface-raised);
+  border-radius: 50%;
+  box-shadow: var(--shadow-knob);
+  translate: 0 0;
+  transform-origin: center;
+  /* ease-out-quart — calm deceleration, no overshoot. The brand is
+   * calm/confident/crafted; spring/elastic easing reads as toy-like here. */
+  transition: translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 220ms ease-out;
+  will-change: translate;
+}
+.toggle input:checked ~ .knob {
+  translate: 14px 0;
+  box-shadow: var(--shadow-knob-active);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle .track::before,
+  .toggle .knob { transition-duration: 0ms; }
+}
+
+/* ── Header actions ── */
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.master-label {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg2);
+  text-transform: uppercase;
+}
+
+/* ── Add-rule button (below the rules list) ──
+ * Dashed outline is the conventional "empty slot to fill" affordance. Solid
+ * on hover/focus to promote it to a real CTA once the user reaches for it. */
+.btn-add-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  margin: var(--sp-4) 0 var(--sp-3);
+  padding: var(--sp-3);
+  font-family: inherit;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--fg2);
+  background: transparent;
+  border: 1px dashed color-mix(in oklab, var(--fg) 20%, var(--bg));
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, border-style 0s;
+}
+.btn-add-rule svg { opacity: 0.7; }
+.btn-add-rule:hover,
+.btn-add-rule:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
+  outline: none;
+}
+.btn-add-rule:hover svg,
+.btn-add-rule:focus-visible svg { opacity: 1; }
+.btn-add-rule:focus-visible {
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+/* ── Footer text links for secondary actions ──
+ * Left-aligned caption row, not a centered button strip. Principle 1:
+ * "left-aligned everything — center alignment signals developer tool." The
+ * first link is flush with the left gutter so it aligns with the section
+ * labels above it; padding is inset to the right so the hit target still
+ * reads generously. */
+.list-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 calc(var(--sp-2) * -1) var(--sp-2);
+  font-size: var(--t-xs);
+  color: var(--fg2);
+}
+.list-footer-actions .link-btn {
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--fg2);
+  padding: var(--sp-2) var(--sp-2);
+  min-height: 32px;
+  border-radius: calc(var(--r) - 6px);
+  cursor: pointer;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+.list-footer-actions .link-btn:hover { color: var(--accent); }
+.list-footer-actions .link-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.list-footer-actions .link-btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
+.list-footer-actions .sep {
+  color: var(--fg2);
+  opacity: 0.4;
+  font-size: var(--t-xs);
+  user-select: none;
+}
+/* ── Header-override presets ──
+ * Advanced controls tucked behind a <details> disclosure so the default view
+ * stays focused on rules. Auto-expands on open when any preset is active. */
+.presets-wrap {
+  margin-top: var(--sp-10);
+  background: var(--bg2);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.presets-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  user-select: none;
+  transition: color 0.18s ease;
+}
+.presets-summary::-webkit-details-marker { display: none; }
+.presets-summary::marker { content: ""; }
+.presets-summary:hover { color: var(--fg); }
+.presets-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--r);
+}
+.presets-chevron {
+  flex-shrink: 0;
+  color: var(--fg2);
+  transition: transform 180ms ease;
+}
+.presets-wrap[open] .presets-chevron { transform: rotate(90deg); }
+
+/* Active-count text — shows "· N ON" when any preset is on so the collapsed
+ * summary reads as status, not an ornament dot. */
+.presets-active-count {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.presets-active-count:empty { display: none; }
+
+.presets-list {
+  display: grid;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0;
+}
+.preset-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+/* Preset rows are *controls* — not named entities like rules — so they use
+ * the body sans, not the mono/serif treatments reserved for identifiers. */
+.preset-name {
+  font-family: var(--body-font);
+  font-size: var(--t-lg);
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.preset-sub {
+  font-size: var(--t-xs);
+  color: var(--fg2);
+  line-height: 1.4;
+}
+.preset-sub code {
+  font-family: var(--mono-font);
+  font-size: var(--t-micro);
+  background: color-mix(in oklab, var(--fg) 7%, var(--bg));
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+/* Hint sits at the TOP of the presets module — PWA devs hit the SW-cache
+ * gotcha before they ever toggle a preset, so the warning must precede the
+ * controls, not follow them. */
+.preset-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid color-mix(in oklab, var(--fg) 8%, transparent);
+  font-size: var(--t-xs);
+  line-height: 1.4;
+  color: var(--fg2);
+}
+.preset-hint svg {
+  flex-shrink: 0;
+  color: var(--fg2);
+  margin-top: 1px;
+}
+
+/* ── Master status ── */
+.master-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  background: color-mix(in oklab, var(--danger) 10%, var(--bg));
+  border: 1px solid color-mix(in oklab, var(--danger) 26%, var(--border));
+  border-radius: var(--r);
+  color: var(--fg);
+  font-size: var(--t-sm);
+}
+.master-status strong { color: var(--danger); font-weight: 600; flex-shrink: 0; }
+.master-status .btn-inline {
+  background: none;
+  border: 1px solid currentColor;
+  color: var(--danger);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.master-status .btn-inline:hover { background: color-mix(in oklab, var(--danger) 14%, transparent); }
+
+/* ── Edit form ── */
+.field { margin-bottom: var(--sp-5); }
+.field-label {
+  display: block;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  margin-bottom: var(--sp-2);
+}
+.field-row { display: flex; gap: var(--sp-3); }
+
+input[type="text"], select {
+  width: 100%; min-height: 42px; padding: 9px 12px; font-size: var(--t-sm); font-family: inherit;
+  line-height: 1.4;
+  color: var(--fg); background: var(--input-bg);
+  border: 1px solid var(--input-bd); border-radius: var(--r); outline: none;
+}
+input[type="text"]:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+select { cursor: pointer; }
+
+.script-list { list-style: none; margin-bottom: var(--sp-3); }
+.script-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  font-size: var(--t-xs);
+  font-family: var(--mono-font);
+  color: var(--fg2);
+  word-break: break-all;
+  border-bottom: 1px solid var(--border);
+}
+.script-item .btn-ghost { font-size: var(--t-lg); padding: 0 2px; }
+.script-text { flex: 1; min-width: 0; }
+.script-attrs {
+  margin-top: 2px;
+  font-size: var(--t-micro);
+  opacity: 0.7;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-2);
+  border-top: 1px solid var(--border);
+  margin-top: var(--sp-6);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+}
+.edit-actions-right { display: flex; gap: var(--sp-3); margin-left: auto; }
+
+/* ── Hints ── */
+.hint {
+  font-size: var(--t-xs);
+  color: var(--fg2);
+  margin-top: var(--sp-2);
+  line-height: 1.45;
+  max-width: 46ch;
+}
+.hint code {
+  font-family: var(--mono-font); font-size: var(--t-micro);
+  background: var(--bg2); padding: 1px 4px; border-radius: 4px;
+}
+.hint-toggle {
+  font-size: var(--t-xs); color: var(--accent); cursor: pointer;
+  min-height: 32px;
+  border: none; background: none; padding: 0; margin-top: var(--sp-1);
+  font-family: inherit;
+  font-weight: 500;
+}
+.hint-toggle:hover { text-decoration: underline; }
+.hint-examples { display: none; margin-top: var(--sp-3); }
+.hint-examples.visible { display: block; }
+
+/* ── URL hero ──
+ * The URL is the H1 of the popup: it's the scope of every rule below. Set it
+ * at the top scale step (16 px) in mono so it reads as "the page this is all
+ * about." Everything else recedes beneath it. */
+.page-url {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  color: var(--fg);
+  font-family: var(--mono-font);
+  padding: 0;
+  /* Generous breathing room below the URL — it's the H1 / scope of the
+   * whole list. An editorial layout needs a real paragraph break between
+   * headline and body, not a few pixels. Matches the between-section gap
+   * so URL→REDIRECTS and REDIRECTS→SCRIPTS read as equivalent breaks. */
+  margin: 0 0 var(--sp-10);
+  letter-spacing: -0.02em;
+  background: none;
+  border: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.page-url[data-empty="true"] {
+  font-family: var(--body-font);
+  font-size: var(--t-sm);
+  font-weight: 400;
+  color: var(--fg2);
+  font-style: italic;
+  letter-spacing: 0;
+}
+.rule-open .exec-dot {
+  display: none;
+}
+.rule-open .exec-count {
+  flex-shrink: 0; font-size: var(--t-micro); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 20px; height: 20px; line-height: 18px;
+  margin-left: auto;
+  text-align: center; border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg));
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--border));
+  color: color-mix(in oklab, var(--accent) 85%, var(--fg));
+  display: none;
+}
+.rule-open .exec-count.visible { display: block; }
+/* Teaching empty state — shown when a section has zero rules. Serif title
+ * carries the job ("Send requests elsewhere.") as a small headline; sans copy
+ * gives the one-sentence what-this-does. Left-aligned, generous measure,
+ * no illustration — per Principle 5, typography is doing all the work. */
+.empty-state {
+  padding: var(--sp-4) 0 var(--sp-2);
+  display: grid;
+  gap: var(--sp-2);
+}
+.empty-title {
+  font-family: var(--heading-font);
+  font-size: var(--t-xl);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+  color: var(--fg);
+}
+.empty-copy {
+  color: var(--fg2);
+  max-width: 42ch;
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+.empty-copy code {
+  font-family: var(--mono-font);
+  font-size: var(--t-micro);
+  color: var(--fg);
+  background: color-mix(in oklab, var(--fg) 7%, var(--bg));
+  padding: 0 4px;
+  border-radius: 3px;
+}

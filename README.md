@@ -55,19 +55,26 @@ This regenerates PNG icons from `icon.svg` and packages everything into `detour-
 
 ## Rule format
 
-Rules are stored in `chrome.storage.local` as an array:
+Rules are stored in `chrome.storage.local` as an array. Import/export wraps that array with a `$schema` pointer so editors (VS Code, etc.) validate the file automatically:
 
 ```json
 {
-  "id": "my-rule",
-  "name": "Mock auth API",
-  "type": "redirect",
-  "enabled": true,
-  "source": { "operator": "wildcard", "value": "https://app.example.com/api/auth/*" },
-  "destination": "http://localhost:4000/api/auth/$1",
-  "scripts": []
+  "$schema": "https://raw.githubusercontent.com/amitse/detour/main/rules.schema.json",
+  "rules": [
+    {
+      "id": "my-rule",
+      "name": "Mock auth API",
+      "type": "redirect",
+      "enabled": true,
+      "source": { "operator": "wildcard", "value": "https://app.example.com/api/auth/*" },
+      "destination": "http://localhost:4000/api/auth/$1",
+      "scripts": []
+    }
+  ]
 }
 ```
+
+Import also accepts a bare array for backward compatibility with older exports.
 
 | Field         | Description                                                  |
 |---------------|--------------------------------------------------------------|
@@ -76,8 +83,10 @@ Rules are stored in `chrome.storage.local` as an array:
 | `destination` | Redirect target URL (supports `$1`, `$2` capture groups)     |
 | `scripts`     | Array of `{ src, attrs? }` for script-type rules             |
 
+The authoritative schema lives at [`rules.schema.json`](./rules.schema.json) in this repo and ships with the extension.
+
 ## Files not shipped
 
-The build zip includes only runtime files. These stay out of the package:
+The build zip includes only runtime files (plus `rules.schema.json`, shipped for reference). These stay out of the package:
 
-- `icon.svg`, `scripts/`, `assets/`, `README.md`, `.gitignore`
+- `scripts/`, `assets/`, `README.md`, `.gitignore`

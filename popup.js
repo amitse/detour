@@ -1,18 +1,95 @@
-/* Detour — Popup */
+/* Detour — Popup / DevTools panel UI
+ *
+ * Shared by popup.html (toolbar popup) and panel.html (DevTools panel). Surface
+ * detection: chrome.devtools is defined only inside DevTools pages, so we use
+ * its presence to pick the tab-resolution strategy.
+ */
+
+// Points at the published rules schema. Exports include this so editors
+// (VS Code, etc.) that understand `$schema` validate the file automatically.
+// The schema itself ships with the extension at rules.schema.json.
+var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/amitse/detour/main/rules.schema.json";
+
+var SURFACE = (typeof chrome !== "undefined" && chrome.devtools && chrome.devtools.inspectedWindow)
+  ? "panel" : "popup";
 
 var allRules = [];
+var globalSettings = { enabled: true, presets: { cors: false, csp: false, xfo: false } };
 var editingId = null;
+// Preserved from the rule being edited so legacy regex rules don't get
+// silently downgraded to wildcard when someone saves. New rules start as
+// "wildcard" — the only operator the UI ever creates.
+var editingOperator = "wildcard";
 var editScripts = [];
 var currentTabId = null;
 var currentTabUrl = "";
 var executions = {}; // { ruleId: { count, lastUrl, time } }
 var isImporting = false;
 
+function cloneAttrs(attrs) {
+  var copy = {};
+  var hasValue = false;
+  for (var key in attrs) {
+    if (!Object.prototype.hasOwnProperty.call(attrs, key)) continue;
+    copy[key] = attrs[key];
+    hasValue = true;
+  }
+  return hasValue ? copy : null;
+}
+
+function cloneScriptEntry(entry) {
+  if (!entry || typeof entry.src !== "string") return null;
+  var script = { src: entry.src };
+  if (entry.attrs && typeof entry.attrs === "object" && !Array.isArray(entry.attrs)) {
+    var attrs = cloneAttrs(entry.attrs);
+    if (attrs) script.attrs = attrs;
+  }
+  return script;
+}
+
+function formatScriptAttrs(attrs) {
+  if (!attrs || typeof attrs !== "object") return "";
+  var parts = [];
+  for (var key in attrs) {
+    if (!Object.prototype.hasOwnProperty.call(attrs, key)) continue;
+    var value = attrs[key];
+    parts.push(value === "" || value === null || value === undefined
+      ? key
+      : key + "=" + value);
+  }
+  return parts.join(" \u00b7 ");
+}
+
+function setToggleAriaLabel(input, ruleName, enabled) {
+  input.setAttribute("aria-label", (enabled ? "Disable " : "Enable ") + 'rule "' + ruleName + '"');
+}
+
+function getErrorMessage(error) {
+  if (!error) return "Unknown error";
+  if (typeof error === "string") return error;
+  if (error.message) return error.message;
+  return String(error);
+}
+
+function showError(prefix, error) {
+  alert(prefix + ": " + getErrorMessage(error));
+}
+
 // ── Messaging ───────────────────────────────────────────────────────
 
 function send(msg) {
-  return new Promise(function (resolve) {
-    chrome.runtime.sendMessage(msg, resolve);
+  return new Promise(function (resolve, reject) {
+    chrome.runtime.sendMessage(msg, function (response) {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (response && response.error) {
+        reject(new Error(response.error));
+        return;
+      }
+      resolve(response);
+    });
   });
 }
 
@@ -21,7 +98,25 @@ function setImportState(importing) {
   var button = document.getElementById("btn-import");
   if (!button) return;
   button.disabled = importing;
-  button.textContent = importing ? "Importing..." : "Import";
+  button.textContent = importing ? "Importing…" : "Import rules";
+}
+
+// ── Tab resolution ──────────────────────────────────────────────────
+
+function getCurrentTab() {
+  return new Promise(function (resolve) {
+    if (SURFACE === "panel") {
+      var tabId = chrome.devtools.inspectedWindow.tabId;
+      chrome.tabs.get(tabId, function (tab) {
+        if (chrome.runtime.lastError || !tab) resolve(null);
+        else resolve(tab);
+      });
+      return;
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+      resolve(tabs && tabs[0] ? tabs[0] : null);
+    });
+  });
 }
 
 // ── Views ───────────────────────────────────────────────────────────
@@ -35,20 +130,34 @@ function showList() {
   renderRules();
 }
 
-function showEdit(rule) {
+function showEdit(rule, defaultType) {
   listView.classList.add("hidden");
   editView.classList.remove("hidden");
 
   editingId = rule ? rule.id : null;
-  document.getElementById("edit-title").textContent = rule ? "Edit rule" : "New rule";
+  document.getElementById("edit-title").textContent = rule
+    ? "Edit rule"
+    : (defaultType === "script" ? "New script" : "New redirect");
   document.getElementById("btn-delete").classList.toggle("hidden", !rule);
 
   document.getElementById("f-name").value = rule ? rule.name : "";
-  document.getElementById("f-type").value = rule ? rule.type : "redirect";
-  document.getElementById("f-operator").value = rule && rule.source ? rule.source.operator : "wildcard";
+  document.getElementById("f-type").value = rule ? rule.type : (defaultType || "redirect");
+  // Operator is no longer user-selectable — new rules are always wildcard,
+  // and existing rules preserve whatever operator they were loaded with
+  // (only legacy regex rules still carry a non-wildcard operator after
+  // normalizeSource in the service worker runs).
+  editingOperator = rule && rule.source && rule.source.operator ? rule.source.operator : "wildcard";
   document.getElementById("f-source").value = rule && rule.source ? rule.source.value : "";
+  document.getElementById("f-method").value = rule && rule.source && rule.source.method
+    ? rule.source.method : "ALL";
   document.getElementById("f-destination").value = rule ? rule.destination || "" : "";
-  editScripts = rule && rule.scripts ? rule.scripts.map(function (s) { return s.src; }) : [];
+  editScripts = [];
+  if (rule && rule.scripts) {
+    for (var i = 0; i < rule.scripts.length; i++) {
+      var cloned = cloneScriptEntry(rule.scripts[i]);
+      if (cloned) editScripts.push(cloned);
+    }
+  }
 
   updateTypeFields();
   renderScriptList();
@@ -60,6 +169,10 @@ function updateTypeFields() {
   var type = document.getElementById("f-type").value;
   document.getElementById("redirect-fields").classList.toggle("hidden", type !== "redirect");
   document.getElementById("script-fields").classList.toggle("hidden", type !== "script");
+  // Script rules fire on webNavigation.onCommitted (always GET on main frame);
+  // method filter is meaningless, so hide it for script type.
+  var methodField = document.getElementById("method-field");
+  if (methodField) methodField.classList.toggle("hidden", type !== "redirect");
 }
 
 // ── Render rule list ────────────────────────────────────────────────
@@ -77,33 +190,80 @@ var TYPE_ICONS = {
     '</svg>',
 };
 
-function getDetail(rule) {
+function getMethod(rule) {
+  return rule.source && rule.source.method ? rule.source.method : "ALL";
+}
+
+function stripProto(s) {
+  return String(s || "").replace(/https?:\/\//g, "");
+}
+
+function getDetailText(rule) {
+  // Plain-text version used for the `title` attribute (so the tooltip shows
+  // the full, untruncated content when the visible text ellipsizes).
+  var method = getMethod(rule);
+  var prefix = method !== "ALL" ? method + " " : "";
   if (rule.type === "redirect") {
-    return (rule.source.value + " \u2192 " + (rule.destination || "")).replace(/https?:\/\//g, "");
+    return prefix + stripProto(rule.source.value) + " \u2192 " + stripProto(rule.destination || "");
   }
   if (rule.type === "script") {
-    return (rule.scripts || []).map(function (s) { return s.src.split("/").pop(); }).join(", ");
+    return prefix + (rule.scripts || []).map(function (s) { return s.src.split("/").pop(); }).join(", ");
   }
   return rule.source ? rule.source.value : "";
 }
 
-function renderRules() {
-  var container = document.getElementById("rules");
-  container.innerHTML = "";
+// Render the detail row into pre-built spans so CSS can truncate the source
+// (left-hand, usually longer) while preserving the destination (right-hand,
+// the load-bearing answer to "where does this go?").
+function fillDetail(container, rule) {
+  container.textContent = "";
+  var method = getMethod(rule);
 
-  if (allRules.length === 0) {
-    var empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.innerHTML =
-      '<div class="empty-title">No rules here yet.</div>' +
-      '<div class="empty-copy">Create a redirect or script rule for the page in front of you.</div>';
-    container.appendChild(empty);
-    return;
+  if (method !== "ALL") {
+    var m = document.createElement("span");
+    m.className = "rule-method";
+    m.textContent = method;
+    container.appendChild(m);
   }
+
+  if (rule.type === "redirect") {
+    var src = document.createElement("span");
+    src.className = "rule-src";
+    src.textContent = stripProto(rule.source.value);
+    var arrow = document.createElement("span");
+    arrow.className = "rule-arrow";
+    arrow.textContent = "\u2192";
+    var dst = document.createElement("span");
+    dst.className = "rule-dst";
+    dst.textContent = stripProto(rule.destination || "");
+    container.appendChild(src);
+    container.appendChild(arrow);
+    container.appendChild(dst);
+  } else if (rule.type === "script") {
+    var scripts = (rule.scripts || []).map(function (s) { return s.src.split("/").pop(); }).join(", ");
+    var single = document.createElement("span");
+    single.className = "rule-src";
+    single.textContent = scripts;
+    container.appendChild(single);
+  }
+}
+
+function renderRules() {
+  var redirectContainer = document.getElementById("rules-redirect");
+  var scriptContainer = document.getElementById("rules-script");
+  if (redirectContainer) redirectContainer.innerHTML = "";
+  if (scriptContainer) scriptContainer.innerHTML = "";
+
+  var redirectCount = 0;
+  var scriptCount = 0;
 
   for (var i = 0; i < allRules.length; i++) {
     (function (rule) {
-      var row = document.createElement("div");
+      var container = rule.type === "script" ? scriptContainer : redirectContainer;
+      if (!container) return;
+      if (rule.type === "script") scriptCount++;
+      else redirectCount++;
+      var row = document.createElement("li");
       row.className = "rule-row";
       row.setAttribute("data-type", rule.type || "");
       if (!rule.enabled) {
@@ -131,12 +291,14 @@ function renderRules() {
 
       var name = document.createElement("div");
       name.className = "rule-name";
-      name.textContent = rule.name || "Untitled rule";
+      var displayName = rule.name || "Untitled rule";
+      name.textContent = displayName;
+      name.title = displayName;
 
       var detail = document.createElement("div");
       detail.className = "rule-detail";
-      detail.textContent = getDetail(rule);
-      detail.title = getDetail(rule);
+      fillDetail(detail, rule);
+      detail.title = getDetailText(rule);
 
       body.appendChild(name);
       body.appendChild(detail);
@@ -145,8 +307,10 @@ function renderRules() {
       var execCount = document.createElement("span");
       execCount.className = "exec-count" + (executions[rule.id] ? " visible" : "");
       if (executions[rule.id]) {
-        execCount.textContent = executions[rule.id].count;
-        execCount.title = "Executed " + executions[rule.id].count + " time(s)";
+        var n = executions[rule.id].count;
+        execCount.textContent = n;
+        execCount.title = n === 1 ? "Executed 1 time" : "Executed " + n + " times";
+        execCount.setAttribute("aria-label", execCount.title);
       }
 
       openButton.appendChild(execDot);
@@ -161,14 +325,12 @@ function renderRules() {
       var input = document.createElement("input");
       input.type = "checkbox";
       input.checked = !!rule.enabled;
-      input.setAttribute("aria-label", (rule.enabled ? "Disable " : "Enable ") + 'rule "' + (rule.name || "untitled") + '"');
+      var ruleName = rule.name || "untitled";
+      setToggleAriaLabel(input, ruleName, !!rule.enabled);
       input.addEventListener("change", function () {
-        toggle.classList.remove("is-toggling");
-        void toggle.offsetWidth;
-        toggle.classList.add("is-toggling");
-        setTimeout(function () { toggle.classList.remove("is-toggling"); }, 360);
         var desired = input.checked;
         row.classList.toggle("is-disabled", !desired);
+        setToggleAriaLabel(input, ruleName, desired);
         // Send the desired state explicitly so concurrent toggles can't race
         // and cancel each other out by re-inverting stale storage state.
         send({ type: "toggleRule", ruleId: rule.id, enabled: desired }).then(function (res) {
@@ -177,10 +339,20 @@ function renderRules() {
             // Reconcile UI in case the server-side state diverged from the
             // optimistic update (e.g. another popup or a concurrent change).
             var updated = allRules.find(function (r) { return r.id === rule.id; });
-            if (updated && updated.enabled !== desired) {
-              renderRules();
+            if (updated) {
+              input.checked = !!updated.enabled;
+              row.classList.toggle("is-disabled", !updated.enabled);
+              setToggleAriaLabel(input, ruleName, !!updated.enabled);
+              if (updated.enabled !== desired) {
+                renderRules();
+              }
             }
           }
+        }).catch(function (error) {
+          input.checked = !desired;
+          row.classList.toggle("is-disabled", desired);
+          setToggleAriaLabel(input, ruleName, !desired);
+          showError("Could not update the rule", error);
         });
       });
 
@@ -198,6 +370,20 @@ function renderRules() {
       container.appendChild(row);
     })(allRules[i]);
   }
+
+  // Section counts — unified grammar with the Header Overrides indicator:
+  // "· N" prefix. Shown only when non-zero to keep zero-state quiet.
+  var countRedirect = document.getElementById("count-redirect");
+  var countScript = document.getElementById("count-script");
+  var redirectEnabled = allRules.filter(function (r) { return r.type === "redirect" && r.enabled; }).length;
+  var scriptEnabled = allRules.filter(function (r) { return r.type === "script" && r.enabled; }).length;
+
+  var emptyRedirect = document.getElementById("empty-redirect");
+  var emptyScript = document.getElementById("empty-script");
+  if (emptyRedirect) emptyRedirect.classList.toggle("hidden", redirectCount > 0);
+  if (emptyScript) emptyScript.classList.toggle("hidden", scriptCount > 0);
+  if (countRedirect) countRedirect.textContent = redirectCount > 0 ? "\u00b7 " + redirectEnabled + "/" + redirectCount : "";
+  if (countScript) countScript.textContent = scriptCount > 0 ? "\u00b7 " + scriptEnabled + "/" + scriptCount : "";
 }
 
 // ── Script list (edit form) ─────────────────────────────────────────
@@ -210,22 +396,36 @@ function renderScriptList() {
     (function (idx) {
       var li = document.createElement("li");
       li.className = "script-item";
+      var script = editScripts[idx];
 
-      var span = document.createElement("span");
-      span.textContent = editScripts[idx];
-      span.style.flex = "1";
+      var text = document.createElement("div");
+      text.className = "script-text";
+
+      var srcLine = document.createElement("div");
+      srcLine.className = "script-src";
+      srcLine.textContent = script.src;
+      text.appendChild(srcLine);
+
+      var attrsText = formatScriptAttrs(script.attrs);
+      if (attrsText) {
+        var attrsLine = document.createElement("div");
+        attrsLine.className = "script-attrs";
+        attrsLine.textContent = attrsText;
+        attrsLine.title = "Attributes applied to the injected <script> element";
+        text.appendChild(attrsLine);
+      }
 
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn-ghost";
       btn.textContent = "\u00d7";
-      btn.setAttribute("aria-label", "Remove script " + editScripts[idx]);
+      btn.setAttribute("aria-label", "Remove script " + script.src);
       btn.addEventListener("click", function () {
         editScripts.splice(idx, 1);
         renderScriptList();
       });
 
-      li.appendChild(span);
+      li.appendChild(text);
       li.appendChild(btn);
       list.appendChild(li);
     })(i);
@@ -234,35 +434,50 @@ function renderScriptList() {
 
 // ── Collect form data ───────────────────────────────────────────────
 
+function newRuleId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback for contexts that don't expose randomUUID. The base36-random
+  // tail gives ~62 bits of entropy.
+  return Date.now().toString(36) + "-" +
+    Math.random().toString(36).slice(2, 12) +
+    Math.random().toString(36).slice(2, 12);
+}
+
 function collectRule() {
   var type = document.getElementById("f-type").value;
   var existing = editingId ? allRules.find(function (r) { return r.id === editingId; }) : null;
 
   return {
-    id: editingId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    id: editingId || newRuleId(),
     name: document.getElementById("f-name").value.trim(),
     type: type,
-    enabled: existing ? existing.enabled : false,
+    enabled: existing ? existing.enabled : true,
     source: {
-      operator: document.getElementById("f-operator").value,
+      operator: editingOperator,
       value: document.getElementById("f-source").value.trim(),
+      method: document.getElementById("f-method").value || "ALL",
     },
     destination: type === "redirect" ? document.getElementById("f-destination").value.trim() : "",
-    scripts: type === "script" ? editScripts.map(function (s) { return { src: s }; }) : [],
+    scripts: type === "script" ? editScripts.map(function (entry) { return cloneScriptEntry(entry); }).filter(Boolean) : [],
   };
 }
 
 // ── Import / Export ─────────────────────────────────────────────────
 
 function exportRules() {
-  var json = JSON.stringify(allRules, null, 2);
+  var payload = { $schema: RULES_SCHEMA_URL, rules: allRules };
+  var json = JSON.stringify(payload, null, 2);
   var blob = new Blob([json], { type: "application/json" });
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
   a.href = url;
   a.download = "request-rules-export.json";
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 100);
 }
 
 function importRules() {
@@ -276,8 +491,18 @@ function importRules() {
     var reader = new FileReader();
     reader.onload = function () {
       try {
-        var imported = JSON.parse(reader.result);
-        if (!Array.isArray(imported)) throw new Error("Expected array");
+        var parsed = JSON.parse(reader.result);
+        // Accept both shapes: the current wrapped form `{ $schema?, rules: [...] }`
+        // and the original bare-array form. Older exports and hand-written lists
+        // should keep working.
+        var imported;
+        if (Array.isArray(parsed)) {
+          imported = parsed;
+        } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.rules)) {
+          imported = parsed.rules;
+        } else {
+          throw new Error("Expected an array of rules or an object with a \"rules\" array");
+        }
         send({ type: "importRules", rules: imported }).then(function (res) {
           if (res) {
             allRules = res.rules;
@@ -289,6 +514,9 @@ function importRules() {
             }
           }
           setImportState(false);
+        }).catch(function (error) {
+          setImportState(false);
+          showError("Could not import rules", error);
         });
       } catch (e) {
         setImportState(false);
@@ -304,95 +532,164 @@ function importRules() {
   input.click();
 }
 
+// ── Master toggle + presets ─────────────────────────────────────────
+
+function applyGlobalSettingsToUI() {
+  var masterInput = document.getElementById("master-toggle");
+  if (masterInput) masterInput.checked = !!globalSettings.enabled;
+
+  var banner = document.getElementById("master-banner");
+  if (banner) banner.classList.toggle("hidden", !!globalSettings.enabled);
+
+  var masterWrap = document.getElementById("master-toggle-wrap");
+  if (masterWrap) {
+    masterWrap.setAttribute(
+      "title",
+      globalSettings.enabled ? "Pause all rules" : "Resume all rules"
+    );
+  }
+
+  var presets = globalSettings.presets || {};
+  var activeCount = 0;
+  ["cors", "csp", "xfo"].forEach(function (key) {
+    var check = document.getElementById("preset-" + key);
+    if (check) check.checked = !!presets[key];
+    if (presets[key]) activeCount++;
+  });
+
+  var countEl = document.getElementById("presets-active-count");
+  if (countEl) countEl.textContent = activeCount > 0 ? "\u00b7 " + activeCount + "/3" : "";
+}
+
+// Auto-expand the disclosure once on popup open if any preset is already on.
+// Don't fight the user: after this initial set, their manual open/close wins.
+function syncPresetDisclosureOnce() {
+  var wrap = document.getElementById("presets-wrap");
+  if (!wrap) return;
+  var presets = globalSettings.presets || {};
+  if (presets.cors || presets.csp || presets.xfo) {
+    wrap.setAttribute("open", "");
+  }
+}
+
+function bindMasterToggle() {
+  var input = document.getElementById("master-toggle");
+  if (!input) return;
+
+  input.addEventListener("change", function () {
+    var desired = input.checked;
+    send({ type: "setMasterEnabled", enabled: desired }).then(function (res) {
+      if (res && res.settings) {
+        globalSettings = res.settings;
+      } else {
+        globalSettings.enabled = desired;
+      }
+      applyGlobalSettingsToUI();
+    }).catch(function (error) {
+      input.checked = !desired;
+      showError("Could not update the master toggle", error);
+    });
+  });
+
+  var resumeBtn = document.getElementById("btn-master-resume");
+  if (resumeBtn) {
+    resumeBtn.addEventListener("click", function () {
+      if (globalSettings.enabled) return;
+      input.checked = true;
+      input.dispatchEvent(new Event("change"));
+    });
+  }
+}
+
+function bindPresetToggle(key) {
+  var input = document.getElementById("preset-" + key);
+  if (!input) return;
+
+  input.addEventListener("change", function () {
+    var desired = input.checked;
+    // Optimistic local state; applyGlobalSettingsToUI reconciles after the
+    // service worker responds.
+    globalSettings.presets = Object.assign({}, globalSettings.presets);
+    globalSettings.presets[key] = desired;
+
+    send({ type: "setPreset", key: key, enabled: desired }).then(function (res) {
+      if (res && res.settings) {
+        globalSettings = res.settings;
+        applyGlobalSettingsToUI();
+      }
+    }).catch(function (error) {
+      input.checked = !desired;
+      globalSettings.presets[key] = !desired;
+      showError("Could not update preset", error);
+    });
+  });
+}
+
 // ── Event bindings ──────────────────────────────────────────────────
 
-document.getElementById("btn-new").addEventListener("click", function () { showEdit(null); });
+document.getElementById("btn-add-redirect").addEventListener("click", function () { showEdit(null, "redirect"); });
+document.getElementById("btn-new-script").addEventListener("click", function () { showEdit(null, "script"); });
 document.getElementById("btn-back").addEventListener("click", showList);
 document.getElementById("btn-cancel").addEventListener("click", showList);
-document.getElementById("btn-import").addEventListener("click", function () { closeMoreMenu(); importRules(); });
-document.getElementById("btn-export").addEventListener("click", function () { closeMoreMenu(); exportRules(); });
-document.getElementById("f-type").addEventListener("change", updateTypeFields);
-
-// ── Overflow menu ───────────────────────────────────────────────────
-
-var btnMore = document.getElementById("btn-more");
-var moreMenu = document.getElementById("more-menu");
-
-function setMoreMenuOpen(open) {
-  moreMenu.classList.toggle("hidden", !open);
-  btnMore.setAttribute("aria-expanded", open ? "true" : "false");
-}
-function closeMoreMenu() { setMoreMenuOpen(false); }
-
-btnMore.addEventListener("click", function (e) {
-  e.stopPropagation();
-  setMoreMenuOpen(moreMenu.classList.contains("hidden"));
+document.getElementById("btn-import").addEventListener("click", importRules);
+document.getElementById("btn-export").addEventListener("click", exportRules);
+document.getElementById("f-type").addEventListener("change", function () {
+  updateTypeFields();
+  // Hint copy + examples depend on the type (script rules hide dest hint
+  // and redirect-flavored examples). Re-run so switching type mid-edit
+  // doesn't leave stale capture-group references on screen.
+  updateHints();
 });
-document.addEventListener("click", function (e) {
-  if (moreMenu.classList.contains("hidden")) return;
-  if (moreMenu.contains(e.target) || btnMore.contains(e.target)) return;
-  closeMoreMenu();
-});
-document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && !moreMenu.classList.contains("hidden")) closeMoreMenu();
-});
+
+bindMasterToggle();
+bindPresetToggle("cors");
+bindPresetToggle("csp");
+bindPresetToggle("xfo");
 
 // ── Hints ───────────────────────────────────────────────────────────
 
-var HINTS = {
-  wildcard: {
-    source: 'Use <code>*</code> to match anything. Each <code>*</code> becomes <code>$1</code>, <code>$2</code>, and so on.',
-    dest: 'Use <code>$1</code>, <code>$2</code> for the captured parts.',
-    examples: [
-      ['<code>https://example.com/api/*</code>', 'Matches any path under /api/'],
-      ['<code>https://*.example.com/*</code>', '<code>$1</code> = subdomain, <code>$2</code> = path'],
-      ['<code>https://source.example/api/*</code> \u2192 <code>https://target.example/mock/$1</code>', 'Redirects matching requests to a mock endpoint'],
-    ],
-  },
-  contains: {
-    source: 'Matches when this text appears anywhere in the URL.',
-    dest: '',
-    examples: [
-      ['<code>example.com</code>', 'Matches any page on this domain'],
-      ['<code>/chat</code>', 'Matches any URL containing /chat'],
-    ],
-  },
-  equals: {
-    source: 'Matches only when the full URL is exactly this value.',
-    dest: '',
-    examples: [
-      ['<code>https://example.com/page</code>', 'Only this exact URL, no query params'],
-    ],
-  },
-  regex: {
-    source: 'Use a regular expression. Capturing groups <code>()</code> can be reused in the destination.',
-    dest: 'Use <code>$1</code>, <code>$2</code> for captured groups.',
-    examples: [
-      ['<code>^https://example\\.com/old/(.*)</code> \u2192 <code>https://example.com/new/$1</code>', 'Regex redirect with capture group'],
-      ['<code>app\\.example.*widget(.*)</code>', 'Escape dots with <code>\\.</code>'],
-    ],
-  },
+// Wildcard is the one operator the UI offers. Every new rule is wildcard;
+// legacy regex rules still work at the backend layer but the popup never
+// writes `regex` for newly-edited rules. Hints show `*` syntax only.
+var WILDCARD_HINT = {
+  source: 'Use <code>*</code> as a placeholder for any text. Leave it out to match the URL exactly.',
+  dest: 'Each <code>*</code> in the pattern becomes <code>$1</code>, <code>$2</code>, and so on.',
+  matchExamples: [
+    ['<code>https://example.com/page</code>', 'Matches that URL exactly'],
+    ['<code>*example.com*</code>', 'Matches any URL containing example.com'],
+    ['<code>https://example.com/api/*</code>', 'Matches any path under /api/'],
+    ['<code>https://*.example.com/*</code>', 'Matches any subdomain and path'],
+  ],
+  redirectExamples: [
+    ['<code>https://source.example/api/*</code> \u2192 <code>https://target.example/mock/$1</code>', 'Redirect to a mock endpoint, preserving the path'],
+  ],
 };
 
 function updateHints() {
-  var op = document.getElementById("f-operator").value;
-  var hint = HINTS[op] || {};
   var type = document.getElementById("f-type").value;
 
-  document.getElementById("hint-source").innerHTML = hint.source || "";
-  document.getElementById("hint-dest").innerHTML = type === "redirect" ? (hint.dest || "") : "";
+  document.getElementById("hint-source").innerHTML = WILDCARD_HINT.source;
+  document.getElementById("hint-dest").innerHTML = type === "redirect" ? WILDCARD_HINT.dest : "";
 
   var exEl = document.getElementById("hint-source-examples");
   exEl.classList.remove("visible");
   exEl.innerHTML = "";
-  if (hint.examples) {
-    for (var i = 0; i < hint.examples.length; i++) {
-      var div = document.createElement("div");
-      div.className = "hint";
-      div.innerHTML = hint.examples[i][0] + (hint.examples[i][1] ? " \u2014 " + hint.examples[i][1] : "");
-      exEl.appendChild(div);
-    }
+  // Script rules see only match examples. Redirect rules also get the
+  // substitution example that demos how `*` turns into `$1` in the dest.
+  var examples = WILDCARD_HINT.matchExamples.slice();
+  if (type === "redirect") {
+    examples = examples.concat(WILDCARD_HINT.redirectExamples);
   }
+  for (var i = 0; i < examples.length; i++) {
+    var div = document.createElement("div");
+    div.className = "hint";
+    div.innerHTML = examples[i][0] + (examples[i][1] ? " \u2014 " + examples[i][1] : "");
+    exEl.appendChild(div);
+  }
+
+  var toggle = document.getElementById("hint-source-toggle");
+  toggle.textContent = "Examples";
+  toggle.setAttribute("aria-expanded", "false");
 }
 
 document.getElementById("hint-source-toggle").addEventListener("click", function () {
@@ -402,13 +699,11 @@ document.getElementById("hint-source-toggle").addEventListener("click", function
   this.setAttribute("aria-expanded", visible ? "true" : "false");
 });
 
-document.getElementById("f-operator").addEventListener("change", updateHints);
-
-document.getElementById("btn-add-script").addEventListener("click", function () {
+document.getElementById("btn-add-script-url").addEventListener("click", function () {
   var inp = document.getElementById("f-script-url");
   var val = inp.value.trim();
   if (val) {
-    editScripts.push(val);
+    editScripts.push({ src: val });
     inp.value = "";
     renderScriptList();
   }
@@ -423,6 +718,8 @@ document.getElementById("btn-save").addEventListener("click", function () {
 
   send({ type: "saveRule", rule: rule }).then(function (res) {
     if (res) { allRules = res.rules; showList(); }
+  }).catch(function (error) {
+    showError("Could not save the rule", error);
   });
 });
 
@@ -430,33 +727,51 @@ document.getElementById("btn-delete").addEventListener("click", function () {
   if (editingId && confirm("Delete this rule?")) {
     send({ type: "deleteRule", ruleId: editingId }).then(function (res) {
       if (res) { allRules = res.rules; showList(); }
+    }).catch(function (error) {
+      showError("Could not delete the rule", error);
     });
   }
 });
 
 // ── Init ────────────────────────────────────────────────────────────
 
-chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-  var tab = tabs && tabs[0];
+getCurrentTab().then(function (tab) {
+  var urlEl = document.getElementById("page-url");
+
   if (tab) {
     currentTabId = tab.id;
     currentTabUrl = tab.url || "";
-    var urlEl = document.getElementById("page-url");
     var display = currentTabUrl.replace(/^https?:\/\//, "").replace(/\?.*$/, "");
-    urlEl.textContent = display || "No page selected";
-    urlEl.title = currentTabUrl;
-
-    // Get execution data for this tab
-    send({ type: "getExecutions", tabId: currentTabId }).then(function (res) {
-      if (res) executions = res.executions || {};
-      // Then load rules
-      send({ type: "getState" }).then(function (res2) {
-        if (res2) { allRules = res2.rules; renderRules(); }
-      });
-    });
+    if (display) {
+      urlEl.textContent = display;
+      urlEl.title = currentTabUrl;
+      urlEl.removeAttribute("data-empty");
+    } else {
+      urlEl.textContent = "No page selected";
+      urlEl.setAttribute("data-empty", "true");
+    }
   } else {
-    send({ type: "getState" }).then(function (res) {
-      if (res) { allRules = res.rules; renderRules(); }
-    });
+    urlEl.textContent = "No page selected";
+    urlEl.setAttribute("data-empty", "true");
   }
+
+  // Executions + rules are independent — fetch both in parallel to halve
+  // open time. getExecutions only needs a tabId; if we don't have one, skip.
+  var requests = [send({ type: "getState" })];
+  if (currentTabId) requests.push(send({ type: "getExecutions", tabId: currentTabId }));
+
+  Promise.all(requests).then(function (results) {
+    var stateRes = results[0];
+    var execRes = results[1];
+    if (stateRes) {
+      allRules = stateRes.rules || [];
+      if (stateRes.settings) globalSettings = stateRes.settings;
+    }
+    if (execRes) executions = execRes.executions || {};
+    applyGlobalSettingsToUI();
+    syncPresetDisclosureOnce();
+    renderRules();
+  }).catch(function (error) {
+    showError("Could not load rule state", error);
+  });
 });

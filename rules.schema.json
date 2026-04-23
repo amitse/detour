@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/amitse/detour/main/rules.schema.json",
+  "title": "Detour rules",
+  "description": "Import/export format for the Detour extension (https://github.com/amitse/detour).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer back to this schema. Editors that understand $schema (VS Code, etc.) will validate against it."
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "required": ["rules"],
+  "additionalProperties": false,
+
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "description": "A single redirect or script-injection rule.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier. Generated if missing on import."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable label shown in the popup."
+        },
+        "type": {
+          "enum": ["redirect", "script"],
+          "description": "redirect: rewrite the URL via declarativeNetRequest + in-page fetch/XHR patching. script: inject external JS into matching pages, bypassing CSP."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "destination": {
+          "type": "string",
+          "description": "Destination URL for redirect rules. $1, $2… reference captured groups from the source pattern. Empty for script rules."
+        },
+        "scripts": {
+          "type": "array",
+          "description": "Scripts to inject when type is \"script\". Empty for redirect rules.",
+          "items": { "$ref": "#/$defs/scriptEntry" }
+        }
+      },
+      "required": ["type", "source"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "redirect" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "destination": { "type": "string", "minLength": 1 }
+            },
+            "required": ["destination"]
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "script" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "scripts": { "type": "array", "minItems": 1 }
+            },
+            "required": ["scripts"]
+          }
+        }
+      ]
+    },
+
+    "source": {
+      "type": "object",
+      "description": "URL match condition.",
+      "properties": {
+        "operator": {
+          "enum": ["wildcard", "contains", "equals", "regex"],
+          "default": "wildcard",
+          "description": "Use `wildcard` for new rules — `*` stands in for any text (leave it out for exact match, wrap a term in `*…*` for contains). `contains` and `equals` are legacy aliases and get normalized to wildcard on load. `regex` is accepted for power users but the extension UI does not create new regex rules."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pattern to match against the request URL. For wildcard, each `*` is a capture group available as `$1`, `$2`… in the redirect destination."
+        },
+        "method": {
+          "enum": ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+          "default": "ALL",
+          "description": "Restrict matching to requests with this HTTP method. Defaults to all methods."
+        }
+      },
+      "required": ["operator", "value"],
+      "additionalProperties": false
+    },
+
+    "scriptEntry": {
+      "type": "object",
+      "description": "One external script to fetch and inject.",
+      "properties": {
+        "src": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "description": "HTTP/HTTPS URL of the script to fetch and inject."
+        },
+        "attrs": {
+          "type": "object",
+          "description": "Attributes applied to the injected <script> element (e.g. type=module, async, crossorigin).",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "required": ["src"],
+      "additionalProperties": false
+    }
+  }
+}

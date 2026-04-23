@@ -28,10 +28,15 @@ const ROOT = path.resolve(__dirname, "..");
 const RUNTIME_FILES = [
   "manifest.json",
   "popup.html",
+  "popup.css",
   "popup.js",
+  "panel.html",
+  "devtools.html",
+  "devtools.js",
   "loader.js",
   "page-script.js",
   "service-worker.js",
+  "rules.schema.json",
   "icon.svg",
   "icons/icon-16.png",
   "icons/icon-32.png",
@@ -90,19 +95,18 @@ let nextVersion = previousVersion;
 if (args.bump) nextVersion = bumpVersion(previousVersion, args.bump);
 else if (args.version) nextVersion = args.version;
 
+let nextManifestText = manifestText;
 if (nextVersion !== previousVersion) {
   // Preserve formatting by replacing only the version line so unrelated
   // whitespace/key order in manifest.json stays intact.
-  const updated = manifestText.replace(
+  nextManifestText = manifestText.replace(
     /("version"\s*:\s*")[^"]+(")/,
     `$1${nextVersion}$2`
   );
-  if (updated === manifestText) {
+  if (nextManifestText === manifestText) {
     throw new Error(`failed to rewrite version in manifest.json`);
   }
-  fs.writeFileSync(manifestPath, updated);
   manifest.version = nextVersion;
-  console.log(`→ bumped version ${previousVersion} → ${nextVersion}`);
 }
 
 // ── 2. Regenerate icons ────────────────────────────────────────────────────
@@ -125,7 +129,7 @@ if (manifest.description && manifest.description.length > 132) {
 }
 console.log(`→ manifest ok (version ${version})`);
 
-// ── 3. Build the zip ───────────────────────────────────────────────────────
+// ── 4. Build the zip ───────────────────────────────────────────────────────
 //
 // Minimal ZIP writer: one local file header + deflated data per entry,
 // followed by a central directory and end-of-central-directory record.
@@ -235,11 +239,19 @@ function buildZip(entries) {
 const entries = RUNTIME_FILES.map((rel) => {
   const abs = path.join(ROOT, rel);
   if (!fs.existsSync(abs)) throw new Error(`missing runtime file: ${rel}`);
-  return { name: rel.replace(/\\/g, "/"), data: fs.readFileSync(abs) };
+  const data = rel === "manifest.json"
+    ? Buffer.from(nextManifestText, "utf8")
+    : fs.readFileSync(abs);
+  return { name: rel.replace(/\\/g, "/"), data };
 });
 
 const zipPath = path.join(ROOT, `detour-${version}.zip`);
 fs.writeFileSync(zipPath, buildZip(entries));
+
+if (nextVersion !== previousVersion) {
+  fs.writeFileSync(manifestPath, nextManifestText);
+  console.log(`→ bumped version ${previousVersion} → ${nextVersion}`);
+}
 
 const sizeKb = (fs.statSync(zipPath).size / 1024).toFixed(1);
 console.log(`→ wrote ${path.basename(zipPath)} (${sizeKb} KB, ${entries.length} files)`);

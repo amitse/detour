@@ -14,7 +14,6 @@
     "tabs",
     "scripting",
     "storage",
-    "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "webNavigation"
   ],
@@ -32,6 +31,7 @@
       "128": "icons/icon-128.png"
     }
   },
+  "devtools_page": "devtools.html",
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
