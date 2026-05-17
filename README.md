@@ -1,92 +1,110 @@
-# Detour
+# 🔀 Detour
 
-A Chromium extension for HTTP redirect and script injection rules during local development and testing.
+**Redirect requests. Inject scripts. Bypass CSP. All from a browser extension.**
 
-Redirect requests. Inject scripts. Bypass CSP.
+The missing dev tool between your browser and localhost. Point any API at your local server, inject a script into a live page, or strip CORS headers — without touching production code.
 
-## What it does
+<p align="center">
+  <img src="assets/screenshot-1280x800.png" alt="Detour extension showing redirect rules" width="720">
+</p>
 
-- **Redirect rules** — Reroute network requests using wildcard, contains, equals, or regex matching. Redirects apply at both the network level (via `declarativeNetRequest`) and in-page (by patching `fetch`/`XMLHttpRequest`).
-- **Script injection rules** — Inject external scripts into any page, bypassing Content Security Policy. The service worker fetches the script text and injects it via `chrome.scripting.executeScript` in the MAIN world — no `<script src>` tag needed.
-- **Per-tab badge** — Shows how many rules fired on the active tab.
-- **Import / Export** — Share rule sets as JSON files.
-
-## Architecture
-
-```
-popup.html / popup.js      — Extension popup UI (rule list + editor)
-service-worker.js           — Background: storage, DNR sync, script injection, messaging
-loader.js                   — Content script (ISOLATED world, document_start): passes redirect rules to page context
-page-script.js              — Content script (MAIN world, document_start): patches fetch/XHR before app code runs
-```
-
-**Redirect flow:**
-1. `loader.js` reads rules from `chrome.storage` and sets `window.__REQUEST_RULES_REDIRECTS__` via an inline script tag.
-2. `page-script.js` patches `fetch` and `XHR.open` to read those rules at call-time and rewrite URLs.
-3. The service worker also registers matching rules with `declarativeNetRequest` for network-level redirects.
-
-**Script injection flow:**
-1. The service worker listens to `webNavigation.onCommitted`.
-2. For matching pages, it fetches external script text (cached for 5 minutes).
-3. Injects via `chrome.scripting.executeScript({ world: "MAIN" })`, which bypasses all CSP.
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/detour/cinkplogkjggmgdkaflhlemcdhchninp"><img src="https://img.shields.io/chrome-web-store/v/cinkplogkjggmgdkaflhlemcdhchninp?style=for-the-badge&logo=googlechrome&label=Chrome%20Web%20Store" alt="Chrome Web Store"></a>
+  <img src="https://img.shields.io/badge/Manifest-V3-blue?style=for-the-badge" alt="Manifest V3">
+  <img src="https://img.shields.io/badge/zero_telemetry-green?style=for-the-badge" alt="Zero Telemetry">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License: MIT">
+</p>
 
 ## Install
 
-**From the Chrome Web Store:** [chromewebstore.google.com/detail/detour](https://chromewebstore.google.com/detail/detour/cinkplogkjggmgdkaflhlemcdhchninp)
+**[→ Chrome Web Store](https://chromewebstore.google.com/detail/detour/cinkplogkjggmgdkaflhlemcdhchninp)** — one click, works in Chrome, Edge, Brave, Arc, and any Chromium browser.
 
-### From source (unpacked)
+## What It Does
 
-1. Open `chrome://extensions` and enable **Developer mode**.
-2. Click **Load unpacked** and select this folder.
+### 🔀 Redirect Rules
+Route any URL to localhost, staging, or a mock — with wildcards and capture groups:
 
-## Build for Chrome Web Store
-
-Requires [sharp](https://sharp.pixelplumbing.com/) (`npm install sharp`).
-
-```bash
-node scripts/build.js                 # build with current version
-node scripts/build.js --bump patch    # bump patch (0.1.1 -> 0.1.2) then build
-node scripts/build.js --bump minor    # bump minor
-node scripts/build.js --bump major    # bump major
-node scripts/build.js --version 1.2.3 # set exact version
+```
+https://app.example.com/api/*  →  http://localhost:4000/api/$1
 ```
 
-This regenerates PNG icons from `icon.svg` and packages everything into `detour-<version>.zip`.
+Redirects work at **both** the network level (`declarativeNetRequest`) and in-page (patches `fetch`/`XHR`), so nothing slips through.
 
-## Rule format
+### 💉 Script Injection
+Load external JavaScript into any page **before** the page's own code runs. Bypasses Content Security Policy — the extension injects with its own privileges, so strict CSP sites work fine.
 
-Rules are stored in `chrome.storage.local` as an array. Import/export wraps that array with a `$schema` pointer so editors (VS Code, etc.) validate the file automatically:
+### ⚡ One-Click Header Overrides
+- **Allow CORS** — no more `Access-Control-Allow-Origin` errors
+- **Disable CSP** — test scripts on locked-down pages
+- **Disable X-Frame-Options** — embed any page in an iframe
+
+## Use Cases
+
+- **Frontend dev**: Point `api.prod.com/v2/*` at `localhost:3001/$1` while keeping the prod UI
+- **Script experiments**: Inject a tracing library or dev overlay into a live site without rebuilding
+- **CORS debugging**: One-click CORS allow instead of configuring server headers
+- **Testing**: Swap a CDN script for a local build to test a fix before deploying
+- **Demos**: Reroute API calls to mock data for a presentation
+
+## Rule Format
+
+Rules are stored as JSON — import/export with VS Code autocomplete via the bundled schema:
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/amitse/detour/main/rules.schema.json",
   "rules": [
     {
-      "id": "my-rule",
+      "id": "mock-auth",
       "name": "Mock auth API",
       "type": "redirect",
       "enabled": true,
       "source": { "operator": "wildcard", "value": "https://app.example.com/api/auth/*" },
-      "destination": "http://localhost:4000/api/auth/$1",
-      "scripts": []
+      "destination": "http://localhost:4000/api/auth/$1"
     }
   ]
 }
 ```
 
-Import also accepts a bare array for backward compatibility with older exports.
+Pattern matching: `wildcard` (default), `contains`, `equals`, or `regex`. Capture groups with `$1`, `$2`, etc.
 
-| Field         | Description                                                  |
-|---------------|--------------------------------------------------------------|
-| `type`        | `"redirect"` or `"script"`                                   |
-| `source`      | Match condition: `operator` (`wildcard`, `contains`, `equals`, `regex`) + `value` |
-| `destination` | Redirect target URL (supports `$1`, `$2` capture groups)     |
-| `scripts`     | Array of `{ src, attrs? }` for script-type rules             |
+## Architecture
 
-The authoritative schema lives at [`rules.schema.json`](./rules.schema.json) in this repo and ships with the extension.
+```
+popup.html / popup.js      — Rule list + editor UI
+service-worker.js          — Storage, DNR sync, script injection
+loader.js                  — Passes redirect rules to page context
+page-script.js             — Patches fetch/XHR before app code runs
+```
 
-## Files not shipped
+**Redirect flow:** `loader.js` reads rules → sets `window.__REQUEST_RULES_REDIRECTS__` → `page-script.js` patches `fetch`/`XHR` at call-time. The service worker also registers `declarativeNetRequest` rules for network-level coverage.
 
-The build zip includes only runtime files (plus `rules.schema.json`, shipped for reference). These stay out of the package:
+**Script injection:** Service worker listens to `webNavigation.onCommitted` → fetches script text (cached 5min) → injects via `chrome.scripting.executeScript({ world: "MAIN" })`, bypassing CSP.
 
-- `scripts/`, `assets/`, `README.md`, `.gitignore`
+## Build from Source
+
+<details>
+<summary>Load unpacked or build for Chrome Web Store</summary>
+
+**Unpacked (dev):**
+1. Open `chrome://extensions`, enable Developer mode
+2. Click "Load unpacked" and select this folder
+
+**Chrome Web Store zip:**
+```bash
+npm install sharp
+node scripts/build.js              # build with current version
+node scripts/build.js --bump patch # bump version and build
+```
+
+Regenerates PNG icons from `icon.svg` and packages into `detour-<version>.zip`.
+
+</details>
+
+## Privacy
+
+Everything runs in your browser. No account, no telemetry, no remote configuration. Rules stay on your machine until you export them.
+
+## License
+
+[MIT](LICENSE)
